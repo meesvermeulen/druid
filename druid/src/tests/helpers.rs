@@ -16,6 +16,9 @@
 //!
 //! This includes tools for making throwaway widgets more easily.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::widget::WidgetExt;
 use crate::*;
 
@@ -44,6 +47,46 @@ pub struct ReplaceChild<T: Data> {
     inner: WidgetPod<T, Box<dyn Widget<T>>>,
     replacer: Box<dyn Fn() -> Box<dyn Widget<T>>>,
 }
+
+/// A widget that records each time one of its methods is called.
+///
+/// Make one like this:
+///
+/// ```
+/// let recording = Recording::default();
+/// let widget = Label::new().padding(4.0).record(&recording);
+/// let events: Vec<Record> = recording.take();
+/// assert_eq!(events, Vec::new());
+/// ```
+pub struct Recorder<W> {
+    recording: Recording,
+    inner: W,
+}
+
+/// A recording of widget method calls.
+#[derive(Debug, Clone, Default)]
+pub struct Recording(Rc<RefCell<Vec<Record>>>);
+
+#[derive(Debug, Clone)]
+pub enum Record {
+    LifeCycle(LifeCycle),
+    Event(Event),
+    Layout(Size),
+    Update(bool),
+    Paint,
+}
+
+/// like WidgetExt but just for this one thing
+pub trait TestWidgetExt<T: Data>: Widget<T> + Sized + 'static {
+    fn record(self, recording: &Recording) -> Recorder<Self> {
+        Recorder {
+            inner: self,
+            recording: recording.clone(),
+        }
+    }
+}
+
+impl<T: Data, W: Widget<T> + 'static> TestWidgetExt<T> for W {}
 
 #[allow(dead_code)]
 impl<S, T> ModularWidget<S, T> {
@@ -171,5 +214,45 @@ impl<T: Data> Widget<T> for ReplaceChild<T> {
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &T, env: &Env) {
         self.inner.paint(ctx, data, env)
+    }
+}
+
+impl Recording {
+    /// Take the inner `Record`s.
+    pub fn take(&self) -> Vec<Record> {
+        std::mem::take(&mut *self.0.borrow_mut())
+    }
+
+    fn push(&self, event: Record) {
+        self.0.borrow_mut().push(event)
+    }
+}
+
+impl<T: Data, W: Widget<T>> Widget<T> for Recorder<W> {
+    fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut T, env: &Env) {
+        self.recording.push(Record::Event(event.clone()));
+        self.inner.event(ctx, event, data, env)
+    }
+
+    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &T, env: &Env) {
+        self.recording.push(Record::LifeCycle(event.clone()));
+        self.inner.lifecycle(ctx, event, data, env)
+    }
+
+    fn update(&mut self, ctx: &mut UpdateCtx, old_data: &T, data: &T, env: &Env) {
+        self.inner.update(ctx, old_data, data, env);
+        let inval = ctx.base_state.needs_inval;
+        self.recording.push(Record::Update(inval));
+    }
+
+    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
+        let size = self.inner.layout(ctx, bc, data, env);
+        self.recording.push(Record::Layout(size));
+        size
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx, data: &T, env: &Env) {
+        self.inner.paint(ctx, data, env);
+        self.recording.push(Record::Paint)
     }
 }
