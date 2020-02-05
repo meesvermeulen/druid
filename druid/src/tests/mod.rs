@@ -25,6 +25,17 @@ use crate::*;
 use harness::*;
 use helpers::*;
 
+// taken from the matches crate
+macro_rules! assert_matches {
+    ($expression:expr, $($pattern:tt)+) => {
+        match $expression {
+            $($pattern)+ => (),
+            ref e => panic!("assertion failed: `{:?}` does not match `{}`", e, stringify!($($pattern)+)),
+        }
+    }
+}
+
+/// test that the first widget to request focus during an event gets it.
 #[test]
 fn take_focus() {
     const TAKE_FOCUS: Selector = Selector::new("druid-tests.take-focus");
@@ -76,6 +87,57 @@ fn take_focus() {
         assert_eq!(harness.window().focus, Some(id_2));
         assert_eq!(left_focus.get(), Some(false));
         assert_eq!(right_focus.get(), Some(true));
+    })
+}
+
+#[test]
+fn simple_lifecyle() {
+    let record = Recording::default();
+    let widget = SizedBox::empty().record(&record);
+    Harness::create(true, widget, |harness| {
+        harness.send_initial_events();
+        let recording = record.take();
+        let mut iter = recording.into_iter();
+        assert_matches!(iter.next(), Some(Record::LifeCycle(LifeCycle::WidgetAdded)));
+        assert_matches!(iter.next(), Some(Record::Event(Event::WindowConnected)));
+        assert_matches!(iter.next(), Some(Record::Event(Event::Size(_))));
+        assert_matches!(iter.next(), None);
+    })
+}
+
+#[test]
+/// Test that lifecycle events are sent correctly to a child added during event
+/// handling
+fn adding_child_lifecycle() {
+    let record = Recording::default();
+    let record_new_child = Recording::default();
+    let record_new_child2 = record_new_child.clone();
+
+    let replacer = ReplaceChild::new(TextBox::raw(), move || {
+        Split::vertical(TextBox::raw(), TextBox::raw().record(&record_new_child2))
+    });
+
+    let widget = Split::vertical(Label::new("hi").record(&record), replacer);
+
+    Harness::create(String::new(), widget, |harness| {
+        harness.send_initial_events();
+
+        let mut iter = record.take().into_iter();
+        assert_matches!(iter.next(), Some(Record::LifeCycle(LifeCycle::WidgetAdded)));
+        assert_matches!(iter.next(), Some(Record::Event(Event::WindowConnected)));
+        assert_matches!(iter.next(), None);
+
+        let mut iter = record_new_child.take().into_iter();
+        assert_matches!(iter.next(), None);
+
+        harness.submit_command(REPLACE_CHILD, None);
+
+        let mut iter = record.take().into_iter();
+        assert_matches!(iter.next(), Some(Record::Event(Event::Command(_))));
+
+        let mut iter = record_new_child.take().into_iter();
+        assert_matches!(iter.next(), Some(Record::LifeCycle(LifeCycle::WidgetAdded)));
+        assert_matches!(iter.next(), None);
     })
 }
 
@@ -154,10 +216,10 @@ fn child_tracking() {
     Harness::create(true, widget, |harness| {
         harness.send_initial_events();
         let root = harness.get_state(id_4).unwrap();
+        assert_eq!(root.children.entry_count(), 3);
         assert!(root.children.contains(&id_1));
         assert!(root.children.contains(&id_2));
         assert!(root.children.contains(&id_3));
-        assert_eq!(root.children.entry_count(), 3);
 
         let split = harness.get_state(id_3).unwrap();
         assert!(split.children.contains(&id_1));
