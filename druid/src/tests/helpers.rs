@@ -173,3 +173,43 @@ impl<T: Data> Widget<T> for ReplaceChild<T> {
         self.inner.paint(ctx, data, env)
     }
 }
+
+// easily make a bunch of WidgetIds
+pub fn widget_id2() -> (WidgetId, WidgetId) {
+    (WidgetId::next(), WidgetId::next())
+}
+
+pub fn widget_id3() -> (WidgetId, WidgetId, WidgetId) {
+    (WidgetId::next(), WidgetId::next(), WidgetId::next())
+}
+
+pub fn widget_id4() -> (WidgetId, WidgetId, WidgetId, WidgetId) {
+    (
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+    )
+}
+
+#[allow(dead_code)]
+pub fn widget_id5() -> (WidgetId, WidgetId, WidgetId, WidgetId, WidgetId) {
+    (
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+    )
+}
+
+pub fn widget_id6() -> (WidgetId, WidgetId, WidgetId, WidgetId, WidgetId, WidgetId) {
+    (
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+        WidgetId::next(),
+    )
+}
